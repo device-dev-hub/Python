@@ -6,6 +6,8 @@ import sys
 import subprocess
 import pkg_resources
 import json
+import threading
+from flask import Flask
 
 # --- VPS DEPEDENCY AUTO-INSTALLER ---
 def install_dependencies():
@@ -15,14 +17,14 @@ python-dotenv==1.0.1
 """
     with open('requirements.txt', 'w') as f:
         f.write(requirements_content)
-    
+
     required = {'python-telegram-bot', 'instagrapi', 'python-dotenv'}
     mapping = {
         'python-telegram-bot': 'python-telegram-bot',
         'instagrapi': 'instagrapi',
         'python-dotenv': 'python-dotenv'
     }
-    
+
     try:
         installed = {pkg.key for pkg in pkg_resources.working_set}
         missing = [mapping[r] for r in required if r.lower() not in installed]
@@ -56,8 +58,10 @@ from instagrapi import Client
 # Load environment variables
 load_dotenv()
 
-# Hardcoded token for personal VPS
+# Telegram token - hardcoded with environment variable fallback
 TELEGRAM_TOKEN = "8571782559:AAH6TH796Lcr0VuJwNW5eBlZhysP64SdBPQ"
+# Override with environment variable if set
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", TELEGRAM_TOKEN)
 
 # Default Raid Templates
 DEFAULT_TEMPLATES = [
@@ -126,7 +130,7 @@ async def check_and_terminate_previous(update: Update, context: ContextTypes.DEF
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await check_and_terminate_previous(update, context, "start")
     user_id = update.effective_user.id
-    
+
     # Auto-restore sessions for the user if not in memory but in persisted storage
     u_id = str(user_id)
     if user_id not in user_clients and u_id in persisted_sessions:
@@ -282,22 +286,22 @@ async def login_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session_id = update.message.text.strip()
     user_id = update.effective_user.id
     u_id = str(user_id)
-    
+
     cl = Client()
     try:
         # Revert to the absolute simplest method that usually works with browser sessions
         # Don't manually set cookies or UA before login_by_sessionid
         # Let the library handle the handshake
         await asyncio.to_thread(cl.login_by_sessionid, session_id)
-        
+
         # If successful, the library will have populated the username
         # We verify by getting account info
         info = await asyncio.to_thread(cl.account_info)
         username = info.username
-        
+
         if user_id not in user_clients:
             user_clients[user_id] = []
-        
+
         user_clients[user_id].append({
             'client': cl,
             'username': username,
@@ -308,7 +312,7 @@ async def login_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
             persisted_sessions[u_id] = []
         persisted_sessions[u_id].append({'username': username, 'session_id': session_id})
         save_json_file(SESSIONS_FILE, persisted_sessions)
-        
+
         await update.message.reply_text(f"✅ ( {username} ) 𝐀𝐜𝐜𝐨𝐮𝐧𝐭 𝐋𝐨𝐠𝐠𝐞𝐝 𝐈𝐧 𝐒𝐮𝐜𝐜𝐞𝐬𝐬𝐟𝐮𝐥𝐥𝐲! 🎉")
         context.user_data['current_cmd'] = None
         return ConversationHandler.END
@@ -323,12 +327,12 @@ async def raid_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ 𝐍𝐨 𝐚𝐜𝐜𝐨𝐮𝐧𝐭𝐬 𝐥𝐨𝐠𝐠𝐞𝐝 𝐢𝐧. 𝐔𝐬𝐞 /login 𝐭𝐨 𝐚𝐝𝐝 𝐨𝐧𝐞! 🔑")
         context.user_data['current_cmd'] = None
         return ConversationHandler.END
-    
+
     accounts = user_clients[user_id]
     text = "🤔 𝐖𝐡𝐢𝐜𝐡 𝐚𝐜𝐜𝐨𝐮𝐧𝐭 𝐝𝐨 𝐲𝐨𝐮 𝐰𝐚𝐧𝐭 𝐭𝐨 𝐮𝐬𝐞?\n"
     for i, acc in enumerate(accounts, 1):
         text += f"{i}. 👤 {acc['username']}\n"
-    
+
     await update.message.reply_text(text)
     return RAID_ACCOUNT
 
@@ -354,14 +358,14 @@ async def raid_threads_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if val.isdigit():
         threads = min(max(1, int(val)), 80)
     context.user_data['threads'] = threads
-    
+
     user_id = update.effective_user.id
     templates = get_user_templates(user_id)
     text = "📝 𝐒𝐞𝐥𝐞𝐜𝐭 𝐚 𝐫𝐚𝐢𝐝 𝐭𝐞𝐦𝐩𝐥𝐚𝐭𝐞:\n"
     for i, template in enumerate(templates, 1):
         preview = template[:50].replace('\n', ' ')
         text += f"{i}. {preview}...\n"
-    
+
     await update.message.reply_text(text)
     return RAID_TEMPLATE_SELECT
 
@@ -387,7 +391,7 @@ async def raid_delay_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         delay = float(update.message.text)
         context.user_data['delay'] = delay
         await update.message.reply_text(f"⏳ 𝐃𝐞𝐥𝐚𝐲 𝐬𝐞𝐭 𝐭𝐨 {delay}𝐬. 🔥 𝐁𝐎𝐌𝐁𝐈𝐍𝐆 𝐒𝐓𝐀𝐑𝐓𝐄𝐃 𝐟𝐨𝐫 𝐭𝐚𝐫𝐠𝐞𝐭: {context.user_data['target_name']}! 💀")
-        
+
         user_id = update.effective_user.id
         acc = context.user_data['selected_account']
         cl = acc['client']
@@ -395,7 +399,7 @@ async def raid_delay_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         threads = context.user_data['threads']
         target = context.user_data['target_name']
         template = context.user_data['selected_template']
-        
+
         msg = template.replace("{target}", str(target))
         thread_id = url.split('/')[-2] if url.endswith('/') else url.split('/')[-1]
 
@@ -419,7 +423,7 @@ async def raid_delay_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for _ in range(threads):
             task = asyncio.create_task(bomb_worker())
             active_workers[user_id].append(task)
-        
+
         context.user_data['current_cmd'] = None
         return ConversationHandler.END
     except ValueError:
@@ -434,13 +438,13 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     install_dependencies()
-    
+
     if not TELEGRAM_TOKEN:
         logging.error("TELEGRAM_BOT_TOKEN is missing!")
         return
 
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    
+
     login_conv = ConversationHandler(
         entry_points=[CommandHandler('login', login_start)],
         states={
@@ -449,7 +453,7 @@ def main():
         fallbacks=[CommandHandler('cancel', cancel), MessageHandler(filters.COMMAND, cancel)],
         allow_reentry=True
     )
-    
+
     raid_conv = ConversationHandler(
         entry_points=[CommandHandler('raid', raid_start)],
         states={
@@ -493,9 +497,29 @@ def main():
     application.add_handler(raid_conv)
     application.add_handler(add_tpl_conv)
     application.add_handler(del_tpl_conv)
-    
+
     logging.info("Bot is active and VPS ready!")
-    application.run_polling()
+    
+    # Create Flask app for health checks
+    app = Flask(__name__)
+    
+    @app.route('/')
+    def health():
+        return {'status': 'Bot is running'}, 200
+    
+    # Run Flask for health endpoint in a background thread
+    def run_flask():
+        app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+    
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    
+    # Give Flask time to start
+    time.sleep(1)
+    
+    # Run bot polling in main thread
+    logging.info("Starting Telegram bot polling...")
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
     try:
