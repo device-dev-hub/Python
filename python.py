@@ -57,7 +57,7 @@ from instagrapi import Client
 load_dotenv()
 
 # Hardcoded token for personal VPS
-TELEGRAM_TOKEN = "8571782559:AAGzXAgR1Lo6yVwQOB8PgwrqfssTbdyrMRw"
+TELEGRAM_TOKEN = "8571782559:AAF78ibRz1YJ-UZYTFZ00nsP5XQ-wTjiRrA"
 
 # Default Raid Templates
 DEFAULT_TEMPLATES = [
