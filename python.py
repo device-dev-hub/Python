@@ -57,7 +57,7 @@ from instagrapi import Client
 load_dotenv()
 
 # Hardcoded token for personal VPS
-TELEGRAM_TOKEN = "8571782559:AAF78ibRz1YJ-UZYTFZ00nsP5XQ-wTjiRrA"
+TELEGRAM_TOKEN = "8571782559:AAH6TH796Lcr0VuJwNW5eBlZhysP64SdBPQ"
 
 # Default Raid Templates
 DEFAULT_TEMPLATES = [
@@ -279,13 +279,19 @@ async def login_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return SESSION_ID
 
 async def login_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    session_id = update.message.text
+    session_id = update.message.text.strip()
     user_id = update.effective_user.id
     u_id = str(user_id)
     
     cl = Client()
     try:
+        # Revert to the absolute simplest method that usually works with browser sessions
+        # Don't manually set cookies or UA before login_by_sessionid
+        # Let the library handle the handshake
         await asyncio.to_thread(cl.login_by_sessionid, session_id)
+        
+        # If successful, the library will have populated the username
+        # We verify by getting account info
         info = await asyncio.to_thread(cl.account_info)
         username = info.username
         
